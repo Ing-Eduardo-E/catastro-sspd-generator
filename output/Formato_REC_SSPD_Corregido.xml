@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<formulario>
+    <encabezado nombre="1893 - Reporte de Estratificacion y Coberturas REC" codigo="1893" version="3.6" grupo="8" subgrupo="1568"/>
+    <serial value="QRONZMPJPMNVL"/>
+    
+    <!-- Columna 1: Código DANE Departamento - 2 dígitos -->
+    <columna id="1" nombre="Código DANE Departamento" tipo="numero" obligatorio="SI" formato="00"/>
+    
+    <!-- Columna 2: Código DANE Municipio - 3 dígitos -->
+    <columna id="2" nombre="Código DANE Municipio" tipo="numero" obligatorio="SI" formato="000"/>
+    
+    <!-- Columna 3: Información Predial utilizada - 1=Número Predial Nacional, 2=Otra información -->
+    <columna id="3" nombre="Informacion Predial utilizada" tipo="numero" min="1" max="2" obligatorio="SI"/>
+    
+    <!-- Columna 4: Número Predial Nacional - 21 a 56 caracteres según compatibilidad -->
+    <columna id="4" nombre="Número Predial Nacional o Información Predial Catastral" tipo="texto" obligatorio="SI" longitudminima="21" longitudmaxima="56"/>
+    
+    <!-- Columna 5: Dirección catastral del predio - Máximo 60 caracteres -->
+    <columna id="5" nombre="Dirección catastral del predio" tipo="texto" obligatorio="NO" longitudmaxima="60"/>
+    
+    <!-- Columna 6: Tipo de Asentamiento - 000=Cabecera, 001-998=Centros poblados, 999=Rural -->
+    <columna id="6" nombre="Tipo de Asentamiento (Cabecera Municipal-Centros Poblados-Rural Dispersa)" tipo="numero" obligatorio="SI" formato="000"/>
+    
+    <!-- Columna 7: Tipo de Estratificación - Ver códigos DANE -->
+    <columna id="7" nombre="Tipo de Estratificacion" tipo="numero" obligatorio="SI" formato="0"/>
+    
+    <!-- Columna 8: Estrato alcaldía - Valores 1-6 para residencial, 8=Sin estrato, 9=No residencial -->
+    <columna id="8" nombre="Estrato alcaldia" tipo="numero" obligatorio="SI" min="1" max="9">
+        <!-- CORREGIDO: Si tipo estratificación es 1-6 (urbano/rural con estrato), el estrato debe ser 1-6 -->
+        <validacion calculo="SI{id7>=[1]&amp;&amp;id7<=[6]}ENTONCES{id8>=[1]&amp;&amp;id8<=[6]}"/>
+        <!-- Si tipo estratificación es 8 (sin estrato), el estrato debe ser 8 -->
+        <validacion calculo="SI{id7=[8]}ENTONCES{id8=[8]}"/>
+        <!-- Si tipo estratificación es 9 (no residencial), el estrato debe ser 9 -->
+        <validacion calculo="SI{id7=[9]}ENTONCES{id8=[9]}"/>
+    </columna>
+    
+    <!-- Columna 9: Estrato Atípico - Para predios en zona de transición -->
+    <columna id="9" nombre="Estrato Atipico" tipo="numero" obligatorio="NO" min="1" max="6">
+        <!-- Si tipo estratificación es 3,4,5,6,8,9 entonces estrato atípico debe estar vacío -->
+        <validacion calculo="SI{id7=[3]||id7=[4]||id7=[5]||id7=[6]||id7=[8]||id7=[9]}ENTONCES{id9=[]}"/>
+        <!-- Reglas de adyacencia para estrato atípico -->
+        <validacion calculo="SI{id8=[1]}ENTONCES{id9=[]||id9=[2]}"/>
+        <validacion calculo="SI{id8=[2]}ENTONCES{id9=[]||id9=[1]||id9=[3]}"/>
+        <validacion calculo="SI{id8=[3]}ENTONCES{id9=[]||id9=[2]||id9=[4]}"/>
+        <validacion calculo="SI{id8=[4]}ENTONCES{id9=[]||id9=[3]||id9=[5]}"/>
+        <validacion calculo="SI{id8=[5]}ENTONCES{id9=[]||id9=[4]||id9=[6]}"/>
+        <validacion calculo="SI{id8=[6]}ENTONCES{id9=[]||id9=[5]}"/>
+    </columna>
+    
+    <!-- === SERVICIO DE ACUEDUCTO === -->
+    
+    <!-- Columna 10: Nombre de la empresa de acueducto -->
+    <columna id="10" nombre="Acueducto - Nombre de la Empresa" tipo="texto" obligatorio="SI" longitudmaxima="300"/>
+    
+    <!-- Columna 11: NIT de la empresa de acueducto - 9 caracteres -->
+    <columna id="11" nombre="Acueducto - NIT" tipo="texto" obligatorio="SI" longitudmaxima="9" longitudminima="9"/>
+    
+    <!-- Columna 12: Dígito de verificación -->
+    <columna id="12" nombre="Acueducto - DV" tipo="texto" obligatorio="SI" longitudmaxima="9" longitudminima="1">
+        <!-- Si NIT es 999999999 (solución particular), DV debe ser 9 -->
+        <validacion calculo="SI{id11=[T999999999]}ENTONCES{id12=[T9]}"/>
+    </columna>
+    
+    <!-- Columna 13: NUIS - Número Único de Identificación del Suscriptor -->
+    <columna id="13" nombre="Acueducto - NUIS" tipo="texto" obligatorio="SI" longitudmaxima="32"/>
+    
+    <!-- Columna 14: Estrato aplicado en facturación de acueducto -->
+    <columna id="14" nombre="Acueducto - Estrato" tipo="numero" obligatorio="SI" formato="00">
+        <!-- CORREGIDO: Valores permitidos según Resolución SSPD -->
+        <!-- 71-76: Metodología adoptada, estratos 1-6 -->
+        <!-- 81-86: Metodología no aplicada, estratos 1-6 -->
+        <!-- 91-96: Sin metodología adoptada, estratos 1-6 -->
+        <!-- 11-15,20: No residenciales -->
+        <!-- 04: Tarifa única, 99: Sin servicio -->
+        <validacion calculo="id14=[71]||id14=[72]||id14=[73]||id14=[74]||id14=[75]||id14=[76]||id14=[81]||id14=[82]||id14=[83]||id14=[84]||id14=[85]||id14=[86]||id14=[91]||id14=[92]||id14=[93]||id14=[94]||id14=[95]||id14=[96]||id14=[11]||id14=[12]||id14=[13]||id14=[14]||id14=[15]||id14=[20]||id14=[04]||id14=[99]"/>
+    </columna>
+    
+    <!-- === SERVICIO DE ALCANTARILLADO === -->
+    
+    <!-- Columna 15: Nombre de la empresa de alcantarillado -->
+    <columna id="15" nombre="Alcantarillado - Nombre de la Empresa" tipo="texto" obligatorio="SI" longitudmaxima="300"/>
+    
+    <!-- Columna 16: NIT de la empresa de alcantarillado -->
+    <columna id="16" nombre="Alcantarillado - NIT" tipo="texto" obligatorio="SI" longitudmaxima="9" longitudminima="9"/>
+    
+    <!-- Columna 17: Dígito de verificación -->
+    <columna id="17" nombre="Alcantarillado - DV" tipo="texto" obligatorio="SI" longitudmaxima="9" longitudminima="1">
+        <validacion calculo="SI{id16=[T999999999]}ENTONCES{id17=[T9]}"/>
+    </columna>
+    
+    <!-- Columna 18: NUIS -->
+    <columna id="18" nombre="Alcantarillado - NUIS" tipo="texto" obligatorio="SI" longitudmaxima="32"/>
+    
+    <!-- Columna 19: Estrato aplicado en facturación de alcantarillado -->
+    <columna id="19" nombre="Alcantarillado - Estrato" tipo="numero" obligatorio="SI" formato="00">
+        <validacion calculo="id19=[71]||id19=[72]||id19=[73]||id19=[74]||id19=[75]||id19=[76]||id19=[81]||id19=[82]||id19=[83]||id19=[84]||id19=[85]||id19=[86]||id19=[91]||id19=[92]||id19=[93]||id19=[94]||id19=[95]||id19=[96]||id19=[11]||id19=[12]||id19=[13]||id19=[14]||id19=[15]||id19=[20]||id19=[04]||id19=[99]"/>
+    </columna>
+    
+    <!-- === SERVICIO DE ASEO === -->
+    
+    <!-- Columna 20: Nombre de la empresa de aseo -->
+    <columna id="20" nombre="Aseo - Nombre de la Empresa" tipo="texto" obligatorio="SI" longitudmaxima="300"/>
+    
+    <!-- Columna 21: NIT de la empresa de aseo -->
+    <columna id="21" nombre="Aseo - NIT" tipo="texto" obligatorio="SI" longitudmaxima="9" longitudminima="9"/>
+    
+    <!-- Columna 22: Dígito de verificación -->
+    <columna id="22" nombre="Aseo - DV" tipo="texto" obligatorio="SI" longitudmaxima="9" longitudminima="1"/>
+    
+    <!-- Columna 23: NUIS -->
+    <columna id="23" nombre="Aseo - NUIS" tipo="texto" obligatorio="SI" longitudmaxima="32"/>
+    
+    <!-- Columna 24: Estrato aplicado en facturación de aseo -->
+    <columna id="24" nombre="Aseo - Estrato" tipo="numero" obligatorio="SI" formato="00">
+        <validacion calculo="id24=[71]||id24=[72]||id24=[73]||id24=[74]||id24=[75]||id24=[76]||id24=[81]||id24=[82]||id24=[83]||id24=[84]||id24=[85]||id24=[86]||id24=[91]||id24=[92]||id24=[93]||id24=[94]||id24=[95]||id24=[96]||id24=[11]||id24=[12]||id24=[13]||id24=[14]||id24=[15]||id24=[20]||id24=[04]||id24=[99]"/>
+    </columna>
+    
+    <plugin posicion="-1" clase="validador.plugins.dane.FormatoCargueDane_1893"/>
+</formulario>
