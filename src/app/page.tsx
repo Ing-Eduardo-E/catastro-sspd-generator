@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   FileUp, 
   Download, 
@@ -14,7 +17,9 @@ import {
   CheckCircle2, 
   Loader2,
   FileSpreadsheet,
-  Info
+  Info,
+  Building2,
+  Hash
 } from 'lucide-react'
 
 export default function Home() {
@@ -29,7 +34,22 @@ export default function Home() {
     totalRecords: number
     matchedRecords: number
     unmatchedRecords: number
+    urbanRecords: number
+    ruralRecords: number
   } | null>(null)
+  
+  // Datos de la empresa urbana
+  const [empresa, setEmpresa] = useState({
+    nombre: '',
+    nit: '',
+    dv: '',
+    aplicaMetodologia: '7'
+  })
+  
+  // Datos de la empresa veredal (acueducto rural no constituido)
+  const [empresaVeredal, setEmpresaVeredal] = useState({
+    nombre: ''
+  })
 
   const handleFileChange = useCallback((type: 'r1' | 'r2') => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -45,9 +65,34 @@ export default function Home() {
     }
   }, [])
 
+  const handleEmpresaChange = useCallback((field: string, value: string) => {
+    setEmpresa(prev => ({ ...prev, [field]: value }))
+    setError(null)
+  }, [])
+
+  const handleEmpresaVeredalChange = useCallback((field: string, value: string) => {
+    setEmpresaVeredal(prev => ({ ...prev, [field]: value }))
+    setError(null)
+  }, [])
+
   const processFiles = useCallback(async () => {
     if (!r1File || !r2File) {
       setError('Por favor seleccione ambos archivos (R1 y R2)')
+      return
+    }
+
+    if (!empresa.nombre.trim()) {
+      setError('Por favor ingrese el nombre de la empresa urbana')
+      return
+    }
+
+    if (!empresa.nit.trim() || empresa.nit.length !== 9) {
+      setError('El NIT debe tener 9 dígitos')
+      return
+    }
+
+    if (!empresa.dv.trim()) {
+      setError('Por favor ingrese el dígito de verificación')
       return
     }
 
@@ -62,6 +107,14 @@ export default function Home() {
       const formData = new FormData()
       formData.append('r1File', r1File)
       formData.append('r2File', r2File)
+      formData.append('empresaNombre', empresa.nombre)
+      formData.append('empresaNit', empresa.nit)
+      formData.append('empresaDv', empresa.dv)
+      formData.append('aplicaMetodologia', empresa.aplicaMetodologia)
+      formData.append('empresaVeredalNombre', empresaVeredal.nombre)
+
+      setProgress(20)
+      setStatus('Procesando registros...')
 
       const response = await fetch('/api/process-catastro', {
         method: 'POST',
@@ -82,13 +135,15 @@ export default function Home() {
         totalRecords: result.totalRecords,
         matchedRecords: result.matchedRecords,
         unmatchedRecords: result.unmatchedRecords,
+        urbanRecords: result.urbanRecords,
+        ruralRecords: result.ruralRecords,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
       setIsProcessing(false)
     }
-  }, [r1File, r2File])
+  }, [r1File, r2File, empresa, empresaVeredal])
 
   const handleDownload = useCallback(async () => {
     if (!downloadUrl) return
@@ -111,7 +166,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="container mx-auto px-4 py-8 max-w-5xl">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
@@ -132,8 +187,10 @@ export default function Home() {
                 <ol className="list-decimal list-inside space-y-1 text-blue-700 dark:text-blue-300">
                   <li>Cargue el archivo R1 (información predial básica)</li>
                   <li>Cargue el archivo R2 (información de construcciones y estratos)</li>
+                  <li>Registre los datos de la empresa de servicios públicos urbana</li>
+                  <li>Registre el nombre del acueducto veredal (para zona rural con vivienda)</li>
                   <li>Presione &quot;Procesar Archivos&quot; para generar la plantilla</li>
-                  <li>Descargue el archivo Excel generado con las primeras 9 columnas</li>
+                  <li>Descargue el archivo Excel y complete manualmente los campos NUIS</li>
                 </ol>
               </div>
             </div>
@@ -227,6 +284,166 @@ export default function Home() {
           </Card>
         </div>
 
+        {/* Empresa Urbana Data Section */}
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Building2 className="h-5 w-5" />
+              Datos de la Empresa de Servicios Públicos (Zona Urbana)
+            </CardTitle>
+            <CardDescription>
+              Estos datos se aplicarán automáticamente a todos los predios urbanos para los 3 servicios
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Nombre de la empresa */}
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="empresaNombre">Nombre de la Empresa</Label>
+                <Input
+                  id="empresaNombre"
+                  placeholder="Ej: Empresa de Servicios Públicos de..."
+                  value={empresa.nombre}
+                  onChange={(e) => handleEmpresaChange('nombre', e.target.value)}
+                  maxLength={300}
+                />
+              </div>
+              
+              {/* NIT */}
+              <div className="space-y-2">
+                <Label htmlFor="empresaNit">NIT (9 dígitos)</Label>
+                <div className="relative">
+                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    id="empresaNit"
+                    placeholder="123456789"
+                    value={empresa.nit}
+                    onChange={(e) => handleEmpresaChange('nit', e.target.value.replace(/\D/g, '').slice(0, 9))}
+                    className="pl-9"
+                    maxLength={9}
+                  />
+                </div>
+              </div>
+              
+              {/* DV */}
+              <div className="space-y-2">
+                <Label htmlFor="empresaDv">Dígito de Verificación</Label>
+                <Input
+                  id="empresaDv"
+                  placeholder="0"
+                  value={empresa.dv}
+                  onChange={(e) => handleEmpresaChange('dv', e.target.value.replace(/\D/g, '').slice(0, 1))}
+                  maxLength={1}
+                  className="w-20"
+                />
+              </div>
+            </div>
+
+            {/* Metodología de estratificación */}
+            <div className="mt-4 space-y-2">
+              <Label htmlFor="aplicaMetodologia">Aplicación de Metodología de Estratificación</Label>
+              <Select
+                value={empresa.aplicaMetodologia}
+                onValueChange={(value) => handleEmpresaChange('aplicaMetodologia', value)}
+              >
+                <SelectTrigger className="w-full md:w-[500px]">
+                  <SelectValue placeholder="Seleccione una opción" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">
+                    <div className="flex flex-col">
+                      <span className="font-medium">La alcaldía adoptó metodología y la empresa la aplica</span>
+                      <span className="text-xs text-slate-500">Estrato servicio: 71-76 (ej: estrato 2 → 72)</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="8">
+                    <div className="flex flex-col">
+                      <span className="font-medium">La alcaldía adoptó metodología pero la empresa NO la aplica</span>
+                      <span className="text-xs text-slate-500">Estrato servicio: 81-86 (usa estratificación propia)</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="9">
+                    <div className="flex flex-col">
+                      <span className="font-medium">La alcaldía NO adoptó metodología</span>
+                      <span className="text-xs text-slate-500">Estrato servicio: 91-96 (empresa aplica estratificación propia)</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Leyenda de clasificación */}
+            <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                Clasificación automática según DESTINO_ECONOMICO (campo R1):
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-slate-500">
+                <div><span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">P/N</span> = Oficial (Estrato Alcaldía: 9, Servicio: 14)</div>
+                <div><span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">C</span> = Comercial (Estrato Alcaldía: 9, Servicio: 12)</div>
+                <div><span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">I</span> = Industrial (Estrato Alcaldía: 9, Servicio: 11)</div>
+                <div><span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">D/A</span> = Residencial (Estrato según R2)</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Empresa Veredal - Acueducto Rural No Constituido */}
+        <Card className="mb-6 border-amber-200 dark:border-amber-800">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Building2 className="h-5 w-5" />
+              Acueducto Veredal (Rural No Constituido)
+            </CardTitle>
+            <CardDescription>
+              Nombre del acueducto veredal para predios rurales con vivienda (AREA_CONSTRUIDA &gt; 0). 
+              Estos acueductos no tienen NIT constituido.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 gap-4">
+              {/* Nombre de la empresa veredal */}
+              <div className="space-y-2">
+                <Label htmlFor="empresaVeredalNombre">Nombre del Acueducto Veredal</Label>
+                <Input
+                  id="empresaVeredalNombre"
+                  placeholder="Ej: Acueducto Veredal El Porvenir"
+                  value={empresaVeredal.nombre}
+                  onChange={(e) => handleEmpresaVeredalChange('nombre', e.target.value)}
+                  maxLength={300}
+                />
+              </div>
+              
+              {/* Info de NIT y DV para veredal */}
+              <div className="space-y-2">
+                <Label>NIT y DV</Label>
+                <div className="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                  <Info className="h-4 w-4 text-amber-600" />
+                  <span className="text-sm text-slate-600 dark:text-slate-400">
+                    Se asignará automáticamente: <strong>NIT = NO NUMERO</strong>, <strong>DV = NO NUMERO</strong>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Leyenda de clasificación rural */}
+            <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg">
+              <p className="text-xs font-medium text-amber-800 dark:text-amber-200 mb-2">
+                Clasificación para zona rural:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-amber-700 dark:text-amber-300">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono bg-amber-200 dark:bg-amber-800 px-1 rounded">AREA_CONSTRUIDA &gt; 0</span>
+                  = Tiene vivienda → Se asigna acueducto veredal
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono bg-amber-200 dark:bg-amber-800 px-1 rounded">AREA_CONSTRUIDA = 0</span>
+                  = Sin vivienda → Sin servicio (Nombre: 8)
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Error Alert */}
         {error && (
           <Alert variant="destructive" className="mb-6">
@@ -257,15 +474,21 @@ export default function Home() {
             <CardContent className="pt-4">
               <div className="flex items-center gap-4 flex-wrap">
                 <Badge variant="outline" className="text-sm py-1 px-3">
-                  Total registros: {stats.totalRecords.toLocaleString()}
+                  Total predios: {stats.totalRecords.toLocaleString()}
                 </Badge>
                 <Badge variant="outline" className="text-sm py-1 px-3 bg-green-50 dark:bg-green-950">
-                  Coincidentes: {stats.matchedRecords.toLocaleString()}
+                  Urbanos: {stats.urbanRecords.toLocaleString()}
                 </Badge>
                 <Badge variant="outline" className="text-sm py-1 px-3 bg-amber-50 dark:bg-amber-950">
-                  Sin coincidencia: {stats.unmatchedRecords.toLocaleString()}
+                  Rurales: {stats.ruralRecords.toLocaleString()}
+                </Badge>
+                <Badge variant="outline" className="text-sm py-1 px-3 bg-blue-50 dark:bg-blue-950">
+                  Coincidentes R1-R2: {stats.matchedRecords.toLocaleString()}
                 </Badge>
               </div>
+              <p className="text-xs text-slate-500 mt-3">
+                * Los predios se clasificaron según DESTINO_ECONOMICO y AREA_CONSTRUIDA. El NUIS debe completarse manualmente.
+              </p>
             </CardContent>
           </Card>
         )}
@@ -274,7 +497,7 @@ export default function Home() {
         <div className="flex gap-4 justify-center">
           <Button
             onClick={processFiles}
-            disabled={!r1File || !r2File || isProcessing}
+            disabled={!r1File || !r2File || isProcessing || !empresa.nombre || !empresa.nit || !empresa.dv}
             size="lg"
             className="min-w-[200px]"
           >
@@ -307,37 +530,127 @@ export default function Home() {
         {/* Output Format Info */}
         <Card className="mt-8">
           <CardHeader>
-            <CardTitle className="text-lg">Formato de Salida</CardTitle>
+            <CardTitle className="text-lg">Formato de Salida - 24 Columnas</CardTitle>
             <CardDescription>
-              El archivo Excel generado contendrá las siguientes 9 columnas según la Resolución SSPD No. 20211000852195:
+              El archivo Excel generado contendrá las 24 columnas del formato REC según la Resolución SSPD No. 20211000852195
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {[
-                { num: 1, name: 'Código DANE Departamento', desc: '2 caracteres' },
-                { num: 2, name: 'Código DANE Municipio', desc: '3 caracteres' },
-                { num: 3, name: 'Información Predial Utilizada', desc: '1 = Número Predial Nacional' },
-                { num: 4, name: 'Número Predial Nacional', desc: '25 caracteres' },
-                { num: 5, name: 'Dirección Catastral del Predio', desc: 'Hasta 60 caracteres' },
-                { num: 6, name: 'Tipo de Asentamiento', desc: '000=Cabecera, 999=Rural' },
-                { num: 7, name: 'Tipo de Estratificación', desc: 'Según metodología DANE' },
-                { num: 8, name: 'Estrato Alcaldía', desc: 'Estrato asignado' },
-                { num: 9, name: 'Estrato Atípico', desc: 'Código de excepción' },
-              ].map((col) => (
-                <div
-                  key={col.num}
-                  className="flex items-start gap-2 p-2 rounded bg-slate-50 dark:bg-slate-800"
-                >
-                  <Badge variant="secondary" className="mt-0.5">
-                    {col.num}
-                  </Badge>
-                  <div>
-                    <p className="text-sm font-medium">{col.name}</p>
-                    <p className="text-xs text-slate-500">{col.desc}</p>
-                  </div>
+            <div className="space-y-4">
+              {/* Columnas 1-9 */}
+              <div>
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Columnas 1-9: Información Catastral (automática desde R1/R2)
+                </p>
+                <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                  {[
+                    { num: 1, name: 'Código DANE Depto' },
+                    { num: 2, name: 'Código DANE Mpio' },
+                    { num: 3, name: 'Info Predial' },
+                    { num: 4, name: 'NPN (30 chars)' },
+                    { num: 5, name: 'Dirección' },
+                    { num: 6, name: 'Tipo Asentamiento' },
+                    { num: 7, name: 'Tipo Estratificación' },
+                    { num: 8, name: 'Estrato Alcaldía' },
+                    { num: 9, name: 'Estrato Atípico' },
+                  ].map((col) => (
+                    <div
+                      key={col.num}
+                      className="flex items-center gap-2 p-2 rounded bg-slate-50 dark:bg-slate-800"
+                    >
+                      <Badge variant="secondary" className="text-xs">{col.num}</Badge>
+                      <span className="text-xs">{col.name}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+
+              {/* Columnas 10-14 Acueducto */}
+              <div>
+                <p className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2">
+                  Columnas 10-14: Acueducto
+                </p>
+                <div className="grid sm:grid-cols-5 gap-2">
+                  {[
+                    { num: 10, name: 'Nombre Empresa', auto: true },
+                    { num: 11, name: 'NIT', auto: true },
+                    { num: 12, name: 'DV', auto: true },
+                    { num: 13, name: 'NUIS', auto: false },
+                    { num: 14, name: 'Estrato', auto: true },
+                  ].map((col) => (
+                    <div
+                      key={col.num}
+                      className={`flex items-center gap-2 p-2 rounded ${col.auto ? 'bg-blue-50 dark:bg-blue-950' : 'bg-amber-50 dark:bg-amber-950'}`}
+                    >
+                      <Badge variant="secondary" className="text-xs">{col.num}</Badge>
+                      <span className="text-xs">{col.name}</span>
+                      {col.auto ? (
+                        <CheckCircle2 className="h-3 w-3 text-green-500 ml-auto" />
+                      ) : (
+                        <span className="text-xs text-amber-600 ml-auto">Manual</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Columnas 15-19 Alcantarillado */}
+              <div>
+                <p className="text-sm font-medium text-teal-700 dark:text-teal-300 mb-2">
+                  Columnas 15-19: Alcantarillado
+                </p>
+                <div className="grid sm:grid-cols-5 gap-2">
+                  {[
+                    { num: 15, name: 'Nombre Empresa', auto: true },
+                    { num: 16, name: 'NIT', auto: true },
+                    { num: 17, name: 'DV', auto: true },
+                    { num: 18, name: 'NUIS', auto: false },
+                    { num: 19, name: 'Estrato', auto: true },
+                  ].map((col) => (
+                    <div
+                      key={col.num}
+                      className={`flex items-center gap-2 p-2 rounded ${col.auto ? 'bg-teal-50 dark:bg-teal-950' : 'bg-amber-50 dark:bg-amber-950'}`}
+                    >
+                      <Badge variant="secondary" className="text-xs">{col.num}</Badge>
+                      <span className="text-xs">{col.name}</span>
+                      {col.auto ? (
+                        <CheckCircle2 className="h-3 w-3 text-green-500 ml-auto" />
+                      ) : (
+                        <span className="text-xs text-amber-600 ml-auto">Manual</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Columnas 20-24 Aseo */}
+              <div>
+                <p className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-2">
+                  Columnas 20-24: Aseo
+                </p>
+                <div className="grid sm:grid-cols-5 gap-2">
+                  {[
+                    { num: 20, name: 'Nombre Empresa', auto: true },
+                    { num: 21, name: 'NIT', auto: true },
+                    { num: 22, name: 'DV', auto: true },
+                    { num: 23, name: 'NUIS', auto: false },
+                    { num: 24, name: 'Estrato', auto: true },
+                  ].map((col) => (
+                    <div
+                      key={col.num}
+                      className={`flex items-center gap-2 p-2 rounded ${col.auto ? 'bg-purple-50 dark:bg-purple-950' : 'bg-amber-50 dark:bg-amber-950'}`}
+                    >
+                      <Badge variant="secondary" className="text-xs">{col.num}</Badge>
+                      <span className="text-xs">{col.name}</span>
+                      {col.auto ? (
+                        <CheckCircle2 className="h-3 w-3 text-green-500 ml-auto" />
+                      ) : (
+                        <span className="text-xs text-amber-600 ml-auto">Manual</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -348,7 +661,7 @@ export default function Home() {
             Basado en la Resolución SSPD No. 20211000852195 del 22-12-2021
           </p>
           <p className="mt-1">
-            Las columnas 10-24 deben ser completadas por la empresa de servicios públicos correspondiente
+            La clasificación de estratos se basa en el campo DESTINO_ECONOMICO del archivo R1.
           </p>
         </footer>
       </div>

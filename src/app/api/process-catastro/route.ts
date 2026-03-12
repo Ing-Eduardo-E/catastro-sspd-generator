@@ -79,87 +79,142 @@ const R2_FIELDS = [
 function parseFixedWidthLine(line: string, fields: typeof R1_FIELDS): Record<string, string> {
   const result: Record<string, string> = {}
   for (const field of fields) {
-    // Ajustar índices a base 0
     const value = line.substring(field.start - 1, field.end).trim()
     result[field.name] = value
   }
   return result
 }
 
-// Función para determinar el tipo de asentamiento según la zona
-function getTipoAsentamiento(zonaFisica: string): string {
-  const zona = zonaFisica.padStart(3, '0')
-  if (zona === '000') return '000' // Cabecera municipal
-  if (zona === '003') return '000' // Urbano
-  if (zona.startsWith('0') && zona !== '000') return zona // Centros poblados
-  return '999' // Rural disperso
+// Función para extraer la zona del Número Predial Nacional
+function getZonaNPN(npn: string): string {
+  if (npn.length < 7) return '00'
+  return npn.substring(5, 7)
 }
 
-// Función para determinar el tipo de estratificación
-function getTipoEstratificacion(zonaFisica: string, estrato: string): string {
-  const zona = zonaFisica.padStart(3, '0')
+// Función para determinar el tipo de asentamiento según la zona del NPN
+function getTipoAsentamiento(npn: string): string {
+  const zona = getZonaNPN(npn)
+  if (zona === '01') return '000' // Cabecera municipal
+  if (zona === '00') return '999' // Rural dispersa
+  return parseInt(zona, 10).toString().padStart(3, '0') // Centros poblados
+}
+
+// Función para verificar si el predio es urbano (cabecera o centros poblados)
+function esZonaUrbana(npn: string): boolean {
+  const zona = getZonaNPN(npn)
+  return zona !== '00' // Todo lo que no sea rural (00) es urbano/centro poblado
+}
+
+// Tipo para clasificación de predio
+type TipoPredio = 'OFICIAL' | 'COMERCIAL' | 'INDUSTRIAL' | 'SERVICIOS' | 'RESIDENCIAL' | 'OTRO_NO_RESIDENCIAL'
+
+// Función para obtener tipo de predio según DESTINO_ECONOMICO
+function getTipoPredio(destinoEconomico: string): TipoPredio {
+  const destino = destinoEconomico.toUpperCase()
+  switch (destino) {
+    case 'P': // Público
+    case 'N': // Institucional/Oficial
+      return 'OFICIAL'
+    case 'C': // Comercio
+      return 'COMERCIAL'
+    case 'I': // Industria
+      return 'INDUSTRIAL'
+    case 'S': // Servicios/Salud
+    case 'H': // Hotelero/Hospitalario
+      return 'SERVICIOS'
+    case 'D': // Vivienda/Dotacional
+    case 'A': // Agrícola (puede ser residencial rural)
+      return 'RESIDENCIAL'
+    default:
+      return 'OTRO_NO_RESIDENCIAL'
+  }
+}
+
+// Función para determinar el Estrato Alcaldía (Columna 8)
+function getEstratoAlcaldia(estratoR2: string, destinoEconomico: string): string {
+  const tipoPredio = getTipoPredio(destinoEconomico)
   
-  // Si es zona rural (003 o rural disperso)
-  if (zona === '003' || zona === '000' && estrato === '0') {
-    return '6' // Rural
+  // Si es no residencial (P, N, C, I, S, H, otros) → 9
+  if (tipoPredio !== 'RESIDENCIAL') {
+    return '9'
   }
   
-  // Si tiene estrato, es urbano
-  if (estrato && estrato !== '0' && estrato !== '') {
-    return '1' // Urbano tipo 1 (por defecto)
+  // Si es residencial y tiene estrato válido en R2 → ese estrato
+  if (['1', '2', '3', '4', '5', '6'].includes(estratoR2)) {
+    return estratoR2
   }
   
-  // Sin estratificación
+  // Si es residencial sin estrato → 8
   return '8'
 }
 
-// Definición de las columnas del formato SSPD con notas explicatorias
+// Función para determinar el código de Estrato de Servicio (Columnas 14, 19, 24)
+function getEstratoServicio(
+  estratoAlcaldia: string,
+  destinoEconomico: string,
+  aplicaMetodologia: string,
+  esUrbano: boolean
+): string {
+  const tipoPredio = getTipoPredio(destinoEconomico)
+  
+  // Si es zona rural → sin servicio
+  if (!esUrbano) {
+    return '99'
+  }
+  
+  // Clasificación por tipo de predio para no residenciales
+  switch (tipoPredio) {
+    case 'INDUSTRIAL':
+      return '11'
+    case 'COMERCIAL':
+      return '12'
+    case 'SERVICIOS':
+      return '13'
+    case 'OFICIAL':
+      return '14'
+    case 'OTRO_NO_RESIDENCIAL':
+      return '20'
+    case 'RESIDENCIAL':
+      // Si tiene estrato 1-6 → usar código según metodología
+      if (['1', '2', '3', '4', '5', '6'].includes(estratoAlcaldia)) {
+        return aplicaMetodologia + estratoAlcaldia
+      }
+      // Residencial sin estrato → tarifa única
+      return '04'
+    default:
+      return '99'
+  }
+}
+
+// Definición de las 24 columnas del formato SSPD
 const OUTPUT_COLUMNS = [
-  {
-    header: 'Código DANE Departamento',
-    note: 'Código de 2 caracteres asignado por el DANE al departamento. Se extrae del archivo R1.',
-    width: 25
-  },
-  {
-    header: 'Código DANE Municipio',
-    note: 'Código de 3 caracteres asignado por el DANE al municipio. Se extrae del archivo R1.',
-    width: 25
-  },
-  {
-    header: 'Información Predial Utilizada',
-    note: 'Se diligencia con "1" indicando que se usa el Número Predial Nacional según Resolución IGAC 070 de 2011.',
-    width: 30
-  },
-  {
-    header: 'Número Predial Nacional',
-    note: 'Código único de 30 caracteres que identifica cada predio en Colombia. Según Resolución IGAC 070 de 2011, INCLUYE los códigos de departamento y municipio. Estructura: Dept (2) + Mpio (3) + Zona (2) + Sector (2) + Comuna (2) + Barrio (2) + Manzana/Vereda (4) + Terreno (4) + Condición (1) + Edificio (2) + Piso (2) + Unidad (4).',
-    width: 35
-  },
-  {
-    header: 'Dirección Catastral del Predio',
-    note: 'Nomenclatura alfanumérica que permite individualizar cada predio. Máximo 60 caracteres. Se extrae del archivo R1.',
-    width: 40
-  },
-  {
-    header: 'Tipo de Asentamiento',
-    note: '000 = Cabecera municipal/distrital, 001-998 = Centros poblados, 999 = Rural dispersa. Se deriva de la zona física del archivo R2.',
-    width: 25
-  },
-  {
-    header: 'Tipo de Estratificación',
-    note: '0=Especial(Bogotá), 1=Urbana Tipo 1, 2=Tipo 2, 3=Tipo 3, 4=Revisada, 5=Centro poblado especial, 6=Rural, 8=Sin estratificar, 9=No residencial.',
-    width: 25
-  },
-  {
-    header: 'Estrato Alcaldía',
-    note: 'Estrato asignado por la alcaldía (1-6). Para no residenciales: 9. Se extrae del archivo R2.',
-    width: 20
-  },
-  {
-    header: 'Estrato Atípico',
-    note: 'Código para casos especiales. Dejar vacío si no aplica. Columna 10-24 deben ser diligenciadas por la empresa de servicios públicos.',
-    width: 20
-  },
+  { header: 'Código DANE Departamento', width: 20 },
+  { header: 'Código DANE Municipio', width: 20 },
+  { header: 'Información Predial Utilizada', width: 15 },
+  { header: 'Número Predial Nacional', width: 35 },
+  { header: 'Dirección Catastral del Predio', width: 40 },
+  { header: 'Tipo de Asentamiento', width: 20 },
+  { header: 'Tipo de Estratificación', width: 20 },
+  { header: 'Estrato Alcaldía', width: 15 },
+  { header: 'Estrato Atípico', width: 15 },
+  // Acueducto
+  { header: 'Acueducto - Nombre de la Empresa', width: 30 },
+  { header: 'Acueducto - NIT', width: 15 },
+  { header: 'Acueducto - DV', width: 10 },
+  { header: 'Acueducto - NUIS', width: 20 },
+  { header: 'Acueducto - Estrato', width: 15 },
+  // Alcantarillado
+  { header: 'Alcantarillado - Nombre de la Empresa', width: 30 },
+  { header: 'Alcantarillado - NIT', width: 15 },
+  { header: 'Alcantarillado - DV', width: 10 },
+  { header: 'Alcantarillado - NUIS', width: 20 },
+  { header: 'Alcantarillado - Estrato', width: 15 },
+  // Aseo
+  { header: 'Aseo - Nombre de la Empresa', width: 30 },
+  { header: 'Aseo - NIT', width: 15 },
+  { header: 'Aseo - DV', width: 10 },
+  { header: 'Aseo - NUIS', width: 20 },
+  { header: 'Aseo - Estrato', width: 15 },
 ]
 
 export async function POST(request: NextRequest) {
@@ -167,6 +222,14 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const r1File = formData.get('r1File') as File
     const r2File = formData.get('r2File') as File
+    
+    // Datos de la empresa urbana
+    const empresaNombre = formData.get('empresaNombre') as string || ''
+    const empresaNit = formData.get('empresaNit') as string || ''
+    const empresaDv = formData.get('empresaDv') as string || ''
+    const aplicaMetodologia = formData.get('aplicaMetodologia') as string || '7'
+    // Datos de la empresa veredal (acueducto rural no constituido)
+    const empresaVeredalNombre = formData.get('empresaVeredalNombre') as string || ''
 
     if (!r1File || !r2File) {
       return NextResponse.json(
@@ -188,18 +251,17 @@ export async function POST(request: NextRequest) {
     for (const line of r2Lines) {
       const parsed = parseFixedWidthLine(line, R2_FIELDS)
       const predialKey = parsed.NUMERO_DEL_PREDIO
-      if (predialKey) {
-        // Si hay múltiples registros R2 para el mismo predio, tomar el primero
-        if (!r2Map.has(predialKey)) {
-          r2Map.set(predialKey, parsed)
-        }
+      if (predialKey && !r2Map.has(predialKey)) {
+        r2Map.set(predialKey, parsed)
       }
     }
 
-    // Procesar registros R1 y combinar con R2
+    // Procesar registros
     const outputData: Record<string, string>[] = []
     let matchedRecords = 0
     let unmatchedRecords = 0
+    let urbanRecords = 0
+    let ruralRecords = 0
 
     for (const line of r1Lines) {
       const r1Data = parseFixedWidthLine(line, R1_FIELDS)
@@ -212,14 +274,76 @@ export async function POST(request: NextRequest) {
         unmatchedRecords++
       }
 
-      // Obtener valores de R2 o valores por defecto
-      const zonaFisica = r2Data?.ZONA_FISICA_1 || ''
-      const estrato = r2Data?.ESTRATO_1 || ''
-
-      // Construir el Número Predial Nacional completo (30 caracteres)
-      // Según PDF: "incluye los códigos de departamento y municipio"
-      // Estructura: Dept(2) + Mpio(3) + NumPredial(25) = 30 caracteres
+      const estratoR2 = r2Data?.ESTRATO_1 || ''
+      const destinoEconomico = r1Data.DESTINO_ECONOMICO || ''
+      const areaConstruida = r1Data.AREA_CONSTRUIDA || ''
+      
+      // Construir Número Predial Nacional
       const numeroPredialNacional = r1Data.DEPARTAMENTO + r1Data.MUNICIPIO + r1Data.NUMERO_DEL_PREDIO
+      
+      // Determinar zona
+      const esUrbano = esZonaUrbana(numeroPredialNacional)
+      if (esUrbano) {
+        urbanRecords++
+      } else {
+        ruralRecords++
+      }
+
+      // Determinar estrato alcaldía (Columna 8)
+      const estratoAlcaldia = getEstratoAlcaldia(estratoR2, destinoEconomico)
+      
+      // Para zona rural: verificar si tiene vivienda (AREA_CONSTRUIDA > 0)
+      const tieneVivienda = !esUrbano && areaConstruida.trim() !== '' && parseInt(areaConstruida, 10) > 0
+      
+      // Determinar estrato de servicio
+      const estratoServicio = getEstratoServicio(estratoAlcaldia, destinoEconomico, aplicaMetodologia, esUrbano)
+
+      // Determinar datos de la empresa según zona
+      // Lógica:
+      // - Urbano: usar empresa urbana (con NIT)
+      // - Rural con vivienda (AREA_CONSTRUIDA > 0): acueducto veredal no constituido
+      // - Rural sin vivienda (AREA_CONSTRUIDA = 0): sin servicio
+      
+      let nombreEmpresa: string, nitEmpresa: string, dvEmpresa: string, nuis: string
+      
+      if (esUrbano) {
+        // Zona urbana: usar empresa urbana
+        nombreEmpresa = empresaNombre
+        nitEmpresa = empresaNit
+        dvEmpresa = empresaDv
+        nuis = '' // Para completar manualmente
+      } else if (tieneVivienda) {
+        // Zona rural con vivienda: acueducto veredal no constituido
+        nombreEmpresa = empresaVeredalNombre || 'ACUEDUCTO VEREDAL'
+        nitEmpresa = 'NO NUMERO'
+        dvEmpresa = 'NO NUMERO'
+        nuis = '' // Para completar manualmente
+      } else {
+        // Zona rural sin vivienda: sin servicio
+        nombreEmpresa = '8'
+        nitEmpresa = 'NO APLICA'
+        dvEmpresa = 'NO APLICA'
+        nuis = 'NO APLICA'
+      }
+      
+      // Determinar tipo de estratificación
+      // Para rural con vivienda: tipo 6 (fincas y viviendas dispersas)
+      // Para rural sin vivienda: tipo 8 (sin estratificar)
+      let tipoEstratificacion: string
+      if (esUrbano) {
+        // Urbano - Tipo 3 (metodología Tipo 3)
+        if (estratoAlcaldia === '9') {
+          tipoEstratificacion = '9' // No residencial
+        } else if (estratoAlcaldia === '8') {
+          tipoEstratificacion = '8' // Sin estratificar
+        } else {
+          tipoEstratificacion = '3' // Urbano Tipo 3
+        }
+      } else if (tieneVivienda) {
+        tipoEstratificacion = '6' // Rural con metodología de fincas
+      } else {
+        tipoEstratificacion = '8' // Sin estratificar
+      }
 
       // Construir registro de salida
       const outputRow: Record<string, string> = {
@@ -228,98 +352,149 @@ export async function POST(request: NextRequest) {
         'Información Predial Utilizada': '1',
         'Número Predial Nacional': numeroPredialNacional,
         'Dirección Catastral del Predio': (r1Data.DIRECCION || '').substring(0, 60),
-        'Tipo de Asentamiento': getTipoAsentamiento(zonaFisica),
-        'Tipo de Estratificación': getTipoEstratificacion(zonaFisica, estrato),
-        'Estrato Alcaldía': estrato || '9',
+        'Tipo de Asentamiento': getTipoAsentamiento(numeroPredialNacional),
+        'Tipo de Estratificación': tipoEstratificacion,
+        'Estrato Alcaldía': estratoAlcaldia,
         'Estrato Atípico': '',
+        // Acueducto
+        'Acueducto - Nombre de la Empresa': nombreEmpresa,
+        'Acueducto - NIT': nitEmpresa,
+        'Acueducto - DV': dvEmpresa,
+        'Acueducto - NUIS': nuis,
+        'Acueducto - Estrato': estratoServicio,
+        // Alcantarillado
+        'Alcantarillado - Nombre de la Empresa': nombreEmpresa,
+        'Alcantarillado - NIT': nitEmpresa,
+        'Alcantarillado - DV': dvEmpresa,
+        'Alcantarillado - NUIS': nuis,
+        'Alcantarillado - Estrato': estratoServicio,
+        // Aseo
+        'Aseo - Nombre de la Empresa': nombreEmpresa,
+        'Aseo - NIT': nitEmpresa,
+        'Aseo - DV': dvEmpresa,
+        'Aseo - NUIS': nuis,
+        'Aseo - Estrato': estratoServicio,
       }
 
       outputData.push(outputRow)
     }
 
-    // Crear workbook de Excel
+    // Crear workbook
     const workbook = XLSX.utils.book_new()
 
     // Crear hoja de datos
     const worksheetData = [
       OUTPUT_COLUMNS.map(col => col.header),
-      ...outputData.map(row => OUTPUT_COLUMNS.map(col => row[col.header]))
+      ...outputData.map(row => OUTPUT_COLUMNS.map(col => row[col.header] || ''))
     ]
 
     const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
-
-    // Configurar anchos de columna
     worksheet['!cols'] = OUTPUT_COLUMNS.map(col => ({ wch: col.width }))
 
-    // Agregar hoja al workbook
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Plantilla REC')
 
-    // Crear hoja de notas explicatorias
+    // Crear hoja de instrucciones
     const notesData = [
-      ['NOTAS EXPLICATORIAS PARA CADA COLUMNA'],
+      ['NOTAS EXPLICATORIAS - Formato REC SSPD'],
       [''],
-      ['Esta plantilla sigue el formato establecido en la Resolución SSPD No. 20211000852195 del 22-12-2021'],
+      ['Resolución SSPD No. 20211000852195 del 22-12-2021'],
       [''],
-      ['Columna', 'Descripción', 'Nota'],
-      ...OUTPUT_COLUMNS.map(col => [col.header, col.note, '']),
+      ['=== COLUMNAS 1-9: INFORMACIÓN CATASTRAL ==='],
+      ['Columna', 'Descripción'],
+      ['1', 'Código DANE Departamento (2 caracteres)'],
+      ['2', 'Código DANE Municipio (3 caracteres)'],
+      ['3', 'Información Predial Utilizada (1 = NPN)'],
+      ['4', 'Número Predial Nacional (30 caracteres)'],
+      ['5', 'Dirección Catastral del Predio'],
+      ['6', 'Tipo de Asentamiento (000=Cabecera, 001-998=Centros poblados, 999=Rural)'],
+      ['7', 'Tipo de Estratificación (3=Urbana Tipo 3, 6=Rural, 8=Sin estratificar, 9=No residencial)'],
+      ['8', 'Estrato Alcaldía (1-6=estratos, 8=Sin estrato, 9=No residencial)'],
+      ['9', 'Estrato Atípico (vacío si no aplica)'],
       [''],
-      ['INFORMACIÓN IMPORTANTE:'],
-      ['- Las columnas 10 a 24 deben ser diligenciadas por la empresa de servicios públicos correspondiente'],
-      ['- Las columnas 1-5 son suministradas por el IGAC, gestores catastrales y catastros descentralizados'],
-      ['- El Número Predial Nacional incluye los códigos de departamento y municipio'],
+      ['=== COLUMNAS 10-24: SERVICIOS PÚBLICOS ==='],
       [''],
-      ['CÓDIGOS DE TIPO DE ASENTAMIENTO:'],
-      ['000 = Cabecera municipal o distrital'],
-      ['001-998 = Centros poblados (código del centro poblado)'],
-      ['999 = Zona rural dispersa (fincas y viviendas dispersas)'],
+      ['-- ACUEDUCTO (Columnas 10-14) --'],
+      ['10', 'Nombre de la Empresa (8=Ninguna si sin servicio)'],
+      ['11', 'NIT (NO APLICA si sin servicio)'],
+      ['12', 'Dígito de Verificación (NO APLICA si sin servicio)'],
+      ['13', 'NUIS (NO APLICA si sin servicio)'],
+      ['14', 'Estrato de facturación (99 si sin servicio)'],
       [''],
-      ['CÓDIGOS DE TIPO DE ESTRATIFICACIÓN:'],
-      ['0 = Cabecera del Distrito Capital (Bogotá) - Metodología especial'],
-      ['1 = Cabeceras distritales y municipales - Metodología urbana Tipo 1'],
-      ['2 = Cabeceras municipales y centros poblados - Metodología Tipo 2'],
-      ['3 = Cabeceras municipales y centros poblados - Metodología Tipo 3'],
-      ['4 = Municipios con revisión general de estratificación'],
-      ['5 = Centros poblados especiales'],
-      ['6 = Áreas rurales (fincas y viviendas dispersas)'],
-      ['8 = Predios sin estratificación'],
-      ['9 = Predios no residenciales'],
+      ['-- ALCANTARILLADO (Columnas 15-19) --'],
+      ['15', 'Nombre de la Empresa (8=Ninguna si sin servicio)'],
+      ['16', 'NIT (NO APLICA si sin servicio)'],
+      ['17', 'Dígito de Verificación (NO APLICA si sin servicio)'],
+      ['18', 'NUIS (NO APLICA si sin servicio)'],
+      ['19', 'Estrato de facturación (99 si sin servicio)'],
       [''],
-      ['CÓDIGOS DE ESTRATO ALCALDÍA:'],
-      ['1-6 = Estratos socioeconómicos'],
-      ['9 = No residencial o sin estrato'],
+      ['-- ASEO (Columnas 20-24) --'],
+      ['20', 'Nombre de la Empresa (8=Ninguna si sin servicio)'],
+      ['21', 'NIT (NO APLICA si sin servicio)'],
+      ['22', 'Dígito de Verificación (NO APLICA si sin servicio)'],
+      ['23', 'NUIS (NO APLICA si sin servicio)'],
+      ['24', 'Estrato de facturación (99 si sin servicio)'],
       [''],
-      ['COLUMNAS ADICIONALES (A DILIGENCIAR POR LA EMPRESA DE SERVICIOS PÚBLICOS):'],
-      ['10. Acueducto - Nombre de la empresa'],
-      ['11. Acueducto - NIT'],
-      ['12. Acueducto - DV'],
-      ['13. Acueducto - NUIS'],
-      ['14. Acueducto - Estrato'],
-      ['15. Alcantarillado - Nombre de la empresa'],
-      ['16. Alcantarillado - NIT'],
-      ['17. Alcantarillado - DV'],
-      ['18. Alcantarillado - NUIS'],
-      ['19. Alcantarillado - Estrato'],
-      ['20. Aseo - Nombre de la empresa'],
-      ['21. Aseo - NIT'],
-      ['22. Aseo - DV'],
-      ['23. Aseo - NUIS'],
-      ['24. Aseo - Estrato'],
+      ['=== CÓDIGOS DE ESTRATO DE SERVICIO ==='],
+      [''],
+      ['RESIDENCIAL CON ESTRATO:'],
+      ['71-76', 'Alcaldía adoptó metodología y empresa la aplica (ej: estrato 2 → 72)'],
+      ['81-86', 'Alcaldía adoptó metodología pero empresa NO la aplica'],
+      ['91-96', 'Alcaldía NO adoptó metodología, empresa aplica propia'],
+      [''],
+      ['NO RESIDENCIAL (según DESTINO_ECONOMICO):'],
+      ['11', 'Industrial (DESTINO_ECONOMICO = I)'],
+      ['12', 'Comercial (DESTINO_ECONOMICO = C)'],
+      ['13', 'Establecimiento de servicios (DESTINO_ECONOMICO = S, H)'],
+      ['14', 'Oficial/Público (DESTINO_ECONOMICO = P, N)'],
+      ['20', 'Otro no residencial'],
+      [''],
+      ['OTROS:'],
+      ['04', 'Tarifa única (residencial sin estrato)'],
+      ['99', 'Sin servicio (zona rural)'],
+      [''],
+      ['=== CLASIFICACIÓN POR DESTINO_ECONOMICO ==='],
+      [''],
+      ['Código R1', 'Descripción', 'Estrato Alcaldía', 'Estrato Servicio'],
+      ['P, N', 'Oficial/Público', '9', '14'],
+      ['C', 'Comercial', '9', '12'],
+      ['I', 'Industrial', '9', '11'],
+      ['S, H', 'Servicios', '9', '13'],
+      ['D, A', 'Residencial', '1-6 o 8', '71-76, 81-86, 91-96 o 04'],
+      ['Otros', 'No clasificado', '9', '20'],
+      [''],
+      ['=== NOTAS IMPORTANTES ==='],
+      ['- La clasificación se basa en el campo DESTINO_ECONOMICO del archivo R1'],
+      [''],
+      ['-- ZONA URBANA --'],
+      ['- Se asigna la empresa urbana con NIT y DV proporcionados'],
+      ['- NUIS queda vacío para completar manualmente'],
+      [''],
+      ['-- ZONA RURAL CON VIVIENDA (AREA_CONSTRUIDA > 0) --'],
+      ['- Se asigna acueducto veredal no constituido'],
+      ['- Nombre: Nombre del acueducto veredal proporcionado'],
+      ['- NIT: NO NUMERO, DV: NO NUMERO'],
+      ['- NUIS: vacío para completar manualmente'],
+      ['- Tipo de Estratificación: 6 (fincas y viviendas dispersas)'],
+      [''],
+      ['-- ZONA RURAL SIN VIVIENDA (AREA_CONSTRUIDA = 0) --'],
+      ['- Sin servicio: Nombre=8, NIT=NO APLICA, DV=NO APLICA, NUIS=NO APLICA'],
+      ['- Tipo de Estratificación: 8 (sin estratificar)'],
+      ['- Estrato de servicio: 99'],
     ]
 
     const notesSheet = XLSX.utils.aoa_to_sheet(notesData)
-    notesSheet['!cols'] = [{ wch: 35 }, { wch: 80 }, { wch: 20 }]
+    notesSheet['!cols'] = [{ wch: 15 }, { wch: 40 }, { wch: 20 }, { wch: 20 }]
     XLSX.utils.book_append_sheet(workbook, notesSheet, 'Instrucciones')
 
     // Generar buffer
     const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
 
-    // Crear directorio de salida si no existe
+    // Guardar archivo
     const outputDir = path.join(process.cwd(), 'output')
     if (!existsSync(outputDir)) {
       await mkdir(outputDir, { recursive: true })
     }
 
-    // Guardar archivo
     const timestamp = Date.now()
     const filename = `Plantilla_REC_${timestamp}.xlsx`
     const filepath = path.join(outputDir, filename)
@@ -332,6 +507,8 @@ export async function POST(request: NextRequest) {
       totalRecords: outputData.length,
       matchedRecords,
       unmatchedRecords,
+      urbanRecords,
+      ruralRecords,
     })
 
   } catch (error) {
