@@ -19,7 +19,9 @@ import {
   FileSpreadsheet,
   Info,
   Building2,
-  Hash
+  Hash,
+  BookOpen,
+  ExternalLink
 } from 'lucide-react'
 
 export default function Home() {
@@ -631,6 +633,62 @@ export default function Home() {
                       )}
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Documentación - PDF Resolución */}
+        <Card className="mt-6 border-emerald-200 dark:border-emerald-800">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <BookOpen className="h-5 w-5" />
+              Documentación Oficial
+            </CardTitle>
+            <CardDescription>
+              Consulta la Resolución SSPD No. 20211000852195 del 22 de diciembre de 2021
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                  Esta resolución establece el formato y las instrucciones para el Reporte de Estratificación 
+                  y Coberturas (REC) que deben presentar los prestadores de servicios públicos domiciliarios.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    asChild
+                    variant="default"
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <a href="/Resolucion-SSPD-20211000852195.pdf" target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                      Ver PDF
+                    </a>
+                  </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <a href="/Resolucion-SSPD-20211000852195.pdf" download>
+                      <Download className="h-4 w-4" />
+                      Descargar
+                    </a>
+                  </Button>
+                </div>
+              </div>
+              <div className="flex-shrink-0">
+                <div className="w-full md:w-48 h-32 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center">
+                  <div className="text-center">
+                    <FileText className="h-10 w-10 text-emerald-600 mx-auto mb-2" />
+                    <p className="text-xs text-slate-500">Resolución SSPD</p>
+                    <p className="text-xs font-medium">20211000852195</p>
+                  </div>
                 </div>
               </div>
             </div>
