@@ -153,12 +153,18 @@ function getEstratoServicio(
   estratoAlcaldia: string,
   destinoEconomico: string,
   aplicaMetodologia: string,
-  esUrbano: boolean
+  esUrbano: boolean,
+  tieneVivienda: boolean = false
 ): string {
   const tipoPredio = getTipoPredio(destinoEconomico)
   
-  // Si es zona rural → sin servicio
+  // Si es zona rural
   if (!esUrbano) {
+    // Rural con vivienda (tiene acueducto veredal) → tarifa única
+    if (tieneVivienda) {
+      return '04'
+    }
+    // Rural sin vivienda → sin servicio
     return '99'
   }
   
@@ -295,8 +301,8 @@ export async function POST(request: NextRequest) {
       // Para zona rural: verificar si tiene vivienda (AREA_CONSTRUIDA > 0)
       const tieneVivienda = !esUrbano && areaConstruida.trim() !== '' && parseInt(areaConstruida, 10) > 0
       
-      // Determinar estrato de servicio
-      const estratoServicio = getEstratoServicio(estratoAlcaldia, destinoEconomico, aplicaMetodologia, esUrbano)
+      // Determinar estrato de servicio (pasar tieneVivienda para rurales con servicio)
+      const estratoServicio = getEstratoServicio(estratoAlcaldia, destinoEconomico, aplicaMetodologia, esUrbano, tieneVivienda)
 
       // Determinar datos de la empresa según zona
       // Lógica:
