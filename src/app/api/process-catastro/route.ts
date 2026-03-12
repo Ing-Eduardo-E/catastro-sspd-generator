@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
-import { writeFile, mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
-import path from 'path'
 
 // Definición de la estructura de campos R1 (posiciones base 1)
 const R1_FIELDS = [
@@ -495,26 +492,22 @@ export async function POST(request: NextRequest) {
     // Generar buffer
     const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
 
-    // Guardar archivo
-    const outputDir = path.join(process.cwd(), 'output')
-    if (!existsSync(outputDir)) {
-      await mkdir(outputDir, { recursive: true })
-    }
-
+    // Devolver archivo directamente (compatible con Vercel)
     const timestamp = Date.now()
     const filename = `Plantilla_REC_${timestamp}.xlsx`
-    const filepath = path.join(outputDir, filename)
-    await writeFile(filepath, excelBuffer)
 
-    return NextResponse.json({
-      success: true,
-      downloadUrl: `/api/download?file=${filename}`,
-      filename,
-      totalRecords: outputData.length,
-      matchedRecords,
-      unmatchedRecords,
-      urbanRecords,
-      ruralRecords,
+    return new NextResponse(excelBuffer, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'X-Filename': filename,
+        'X-Total-Records': outputData.length.toString(),
+        'X-Matched-Records': matchedRecords.toString(),
+        'X-Unmatched-Records': unmatchedRecords.toString(),
+        'X-Urban-Records': urbanRecords.toString(),
+        'X-Rural-Records': ruralRecords.toString(),
+      },
     })
 
   } catch (error) {

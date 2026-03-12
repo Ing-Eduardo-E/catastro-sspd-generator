@@ -29,7 +29,6 @@ export default function Home() {
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
   const [stats, setStats] = useState<{
     totalRecords: number
     matchedRecords: number
@@ -60,7 +59,6 @@ export default function Home() {
         setR2File(file)
       }
       setError(null)
-      setDownloadUrl(null)
       setStats(null)
     }
   }, [])
@@ -100,7 +98,6 @@ export default function Home() {
     setError(null)
     setProgress(0)
     setStatus('Leyendo archivo R1...')
-    setDownloadUrl(null)
     setStats(null)
 
     try {
@@ -126,17 +123,33 @@ export default function Home() {
         throw new Error(errorData.error || 'Error al procesar los archivos')
       }
 
-      const result = await response.json()
+      // Obtener estadísticas de los headers
+      const totalRecords = parseInt(response.headers.get('X-Total-Records') || '0', 10)
+      const matchedRecords = parseInt(response.headers.get('X-Matched-Records') || '0', 10)
+      const unmatchedRecords = parseInt(response.headers.get('X-Unmatched-Records') || '0', 10)
+      const urbanRecords = parseInt(response.headers.get('X-Urban-Records') || '0', 10)
+      const ruralRecords = parseInt(response.headers.get('X-Rural-Records') || '0', 10)
+      const filename = response.headers.get('X-Filename') || 'Plantilla_REC_SSPD.xlsx'
+
+      // Descargar archivo directamente
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
       
       setProgress(100)
-      setStatus('Proceso completado')
-      setDownloadUrl(result.downloadUrl)
+      setStatus('Proceso completado - Archivo descargado')
       setStats({
-        totalRecords: result.totalRecords,
-        matchedRecords: result.matchedRecords,
-        unmatchedRecords: result.unmatchedRecords,
-        urbanRecords: result.urbanRecords,
-        ruralRecords: result.ruralRecords,
+        totalRecords,
+        matchedRecords,
+        unmatchedRecords,
+        urbanRecords,
+        ruralRecords,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido')
@@ -144,25 +157,6 @@ export default function Home() {
       setIsProcessing(false)
     }
   }, [r1File, r2File, empresa, empresaVeredal])
-
-  const handleDownload = useCallback(async () => {
-    if (!downloadUrl) return
-    
-    try {
-      const response = await fetch(downloadUrl)
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'Plantilla_REC_SSPD.xlsx'
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    } catch (err) {
-      setError('Error al descargar el archivo')
-    }
-  }, [downloadUrl])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
@@ -513,18 +507,6 @@ export default function Home() {
               </>
             )}
           </Button>
-
-          {downloadUrl && (
-            <Button
-              onClick={handleDownload}
-              variant="default"
-              size="lg"
-              className="min-w-[200px] bg-green-600 hover:bg-green-700"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Descargar Excel
-            </Button>
-          )}
         </div>
 
         {/* Output Format Info */}
